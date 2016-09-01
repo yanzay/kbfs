@@ -21,6 +21,7 @@ type tlfJournalConfig interface {
 	BlockSplitter() BlockSplitter
 	Codec() Codec
 	Crypto() Crypto
+	Reporter() Reporter
 	currentInfoGetter() currentInfoGetter
 	encryptionKeyGetter() encryptionKeyGetter
 	MDServer() MDServer
@@ -428,7 +429,7 @@ func (j *tlfJournal) getNextBlockEntryToFlush(ctx context.Context) (
 }
 
 func (j *tlfJournal) removeFlushedBlockEntry(ctx context.Context,
-	ordinal journalOrdinal, entry blockJournalEntry) error {
+	ordinal journalOrdinal, entry blockJournalEntry) (int64, error) {
 	j.journalLock.Lock()
 	defer j.journalLock.Unlock()
 	return j.blockJournal.removeFlushedEntry(ctx, ordinal, entry)
@@ -455,10 +456,19 @@ func (j *tlfJournal) flushOneBlockOp(ctx context.Context) (bool, error) {
 
 	// We're the only thing removing from the block journal, so we
 	// can assume that the earliest op is the one we just got.
-	err = j.removeFlushedBlockEntry(ctx, ordinal, *entry)
+	flushedBytes, err := j.removeFlushedBlockEntry(ctx, ordinal, *entry)
 	if err != nil {
 		return false, err
 	}
+
+	j.config.Reporter().NotifySyncStatus(ctx, &keybase1.FSPathSyncStatus{
+		PublicTopLevelFolder: j.tlfID.IsPublic(),
+		// Pathname: TODO,
+		// SyncingBytes: TODO,
+		// SyncingOps: TODO,
+		SyncedBytes: flushedBytes,
+	})
+
 	return true, nil
 }
 
